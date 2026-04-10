@@ -1,0 +1,281 @@
+{
+  "name": "Tetherfi Email AI Agent (Fixed - Ollama Only)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [{ "mode": "everyMinute" }]
+        },
+        "filters": { "readStatus": "unread" }
+      },
+      "id": "node-gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [0, 300],
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const policyText = `\nTetherfi Company Email Policy\n\n1. Response Time\nAll customer emails must be replied within 24 hours.\nPriority emails must be responded within 2 hours.\n\n2. Tone Guidelines\nAlways use a professional and friendly tone.\nAvoid slang or informal language.\nAddress the customer by their name.\n\n3. Refund Policy\nRefunds are applicable within 30 days of purchase.\nCustomer must provide proof of purchase.\nRefunds are processed within 5-7 business days.\n\n4. Escalation Policy\nIf a customer complaint cannot be resolved within 2 emails,\nescalate to the senior support team immediately.\n\n5. Confidentiality\nNever share internal pricing, employee details,\nor unreleased product information with customers.\n\n6. Sign-off\nAlways end emails with: Best regards, Tetherfi Support Team\n`;\n\nconst chunkSize = 400;\nconst overlap = 50;\nconst chunks = [];\n\nfor (let i = 0; i < policyText.length; i += chunkSize - overlap) {\n  const chunk = policyText.slice(i, i + chunkSize);\n  if (chunk.trim().length > 0) {\n    chunks.push({\n      json: {\n        pageContent: chunk,\n        metadata: { source: 'tetherfi_policy' }\n      }\n    });\n  }\n}\n\nreturn chunks;"
+      },
+      "id": "node-policy-loader",
+      "name": "Load Policy Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 600]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "memoryKey": "tetherfi_policies",
+        "clearStore": true
+      },
+      "id": "node-vector-store-insert",
+      "name": "Vector Store (Insert)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1,
+      "position": [500, 600]
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text",
+        "baseUrl": "http://localhost:11434"
+      },
+      "id": "node-embed-insert",
+      "name": "Ollama Embeddings (Insert)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [500, 780]
+    },
+    {
+      "parameters": {
+        "mode": "retrieve",
+        "memoryKey": "tetherfi_policies"
+      },
+      "id": "node-vector-store-retrieve",
+      "name": "Vector Store (Retrieve)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text",
+        "baseUrl": "http://localhost:11434"
+      },
+      "id": "node-embed-retrieve",
+      "name": "Ollama Embeddings (Retrieve)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [900, 780]
+    },
+    {
+      "parameters": {
+        "name": "policy_retriever",
+        "description": "Retrieves relevant Tetherfi company policies, tone guidelines, refund rules and SOPs based on the email content. Use this before drafting any reply.",
+        "topK": 3
+      },
+      "id": "node-rag-tool",
+      "name": "RAG Tool (Policy Retriever)",
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1,
+      "position": [1100, 600]
+    },
+    {
+      "parameters": {
+        "categories": {
+          "categories": [
+            { "category": "customer_support", "description": "Customer complaints, queries, product issues, general questions" },
+            { "category": "finance_billing", "description": "Payment, invoice, refund, billing related emails" },
+            { "category": "promotion", "description": "Marketing, promotional, newsletter, spam emails" },
+            { "category": "high_priority", "description": "Urgent issues, escalations, legal matters, angry customers" }
+          ]
+        },
+        "inputText": "={{ $json.snippet }}",
+        "options": {}
+      },
+      "id": "node-classifier",
+      "name": "Text Classifier",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "model": "llama3.2",
+        "baseUrl": "http://localhost:11434",
+        "options": {}
+      },
+      "id": "node-ollama-classifier",
+      "name": "Ollama (Classifier)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [250, 480]
+    },
+    {
+      "parameters": {
+        "operation": "addLabel",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": ["Label_1"]
+      },
+      "id": "node-label-customer",
+      "name": "Label: Customer Support",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [500, 160],
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "operation": "addLabel",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": ["Label_2"]
+      },
+      "id": "node-label-finance",
+      "name": "Label: Finance",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "operation": "addLabel",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": ["Label_3"]
+      },
+      "id": "node-label-priority",
+      "name": "Label: High Priority",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [500, 440],
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    },
+    {
+      "parameters": {
+        "model": "llama3.2",
+        "baseUrl": "http://localhost:11434",
+        "options": { "temperature": 0.3 }
+      },
+      "id": "node-ollama-agent",
+      "name": "Ollama (Agent)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [1100, 480]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a professional email assistant for Tetherfi company.\n\nYou have access to Tetherfi company policies via the policy_retriever tool.\nALWAYS call policy_retriever FIRST before drafting any reply.\n\nEmail details:\nFrom: {{ $('Gmail Trigger').item.json.from }}\nSubject: {{ $('Gmail Trigger').item.json.subject }}\nMessage: {{ $('Gmail Trigger').item.json.snippet }}\nCategory: {{ $('Text Classifier').item.json.category }}\n\nInstructions:\n1. Call policy_retriever with the email topic to get relevant policies\n2. Draft a professional reply based on those policies\n3. Keep tone professional, friendly, and empathetic\n4. Address the customer by name if available\n5. End with: Best regards, Tetherfi Support Team\n\nDraft the reply now.",
+        "options": {}
+      },
+      "id": "node-ai-agent",
+      "name": "AI Agent (Draft Reply)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "model": "llama3.2",
+        "baseUrl": "http://localhost:11434",
+        "options": { "temperature": 0.1 }
+      },
+      "id": "node-ollama-tone",
+      "name": "Ollama (Tone)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [1350, 480]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a tone correction expert for Tetherfi company emails.\n\nReview the draft email below and correct the tone if needed.\nRules:\n- Must be professional and friendly\n- Must NOT be casual or use slang\n- Must be empathetic to the customer\n- Must be clear and concise\n- Must end with: Best regards, Tetherfi Support Team\n- Do NOT change the actual information or policy content\n\nDraft to review:\n{{ $('AI Agent (Draft Reply)').item.json.output }}\n\nReturn ONLY the final corrected email. No explanations.",
+        "options": {}
+      },
+      "id": "node-tone-agent",
+      "name": "AI Agent (Tone Corrector)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "operation": "reply",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "message": "={{ $('AI Agent (Tone Corrector)').item.json.output }}",
+        "options": {}
+      },
+      "id": "node-send-reply",
+      "name": "Send Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1600, 300],
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CREDENTIAL_ID", "name": "Gmail account" } }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          { "node": "Load Policy Text", "type": "main", "index": 0 },
+          { "node": "Text Classifier", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Load Policy Text": {
+      "main": [[{ "node": "Vector Store (Insert)", "type": "main", "index": 0 }]]
+    },
+    "Vector Store (Insert)": {
+      "main": [[{ "node": "Text Classifier", "type": "main", "index": 0 }]]
+    },
+    "Ollama Embeddings (Insert)": {
+      "ai_embedding": [[{ "node": "Vector Store (Insert)", "type": "ai_embedding", "index": 0 }]]
+    },
+    "Ollama Embeddings (Retrieve)": {
+      "ai_embedding": [[{ "node": "Vector Store (Retrieve)", "type": "ai_embedding", "index": 0 }]]
+    },
+    "Vector Store (Retrieve)": {
+      "ai_vectorStore": [[{ "node": "RAG Tool (Policy Retriever)", "type": "ai_vectorStore", "index": 0 }]]
+    },
+    "RAG Tool (Policy Retriever)": {
+      "ai_tool": [[{ "node": "AI Agent (Draft Reply)", "type": "ai_tool", "index": 0 }]]
+    },
+    "Ollama (Classifier)": {
+      "ai_languageModel": [[{ "node": "Text Classifier", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Text Classifier": {
+      "main": [
+        [{ "node": "Label: Customer Support", "type": "main", "index": 0 }],
+        [{ "node": "Label: Finance", "type": "main", "index": 0 }],
+        [],
+        [{ "node": "Label: High Priority", "type": "main", "index": 0 }]
+      ]
+    },
+    "Label: Customer Support": {
+      "main": [[{ "node": "AI Agent (Draft Reply)", "type": "main", "index": 0 }]]
+    },
+    "Label: Finance": {
+      "main": [[{ "node": "AI Agent (Draft Reply)", "type": "main", "index": 0 }]]
+    },
+    "Label: High Priority": {
+      "main": [[{ "node": "AI Agent (Draft Reply)", "type": "main", "index": 0 }]]
+    },
+    "Ollama (Agent)": {
+      "ai_languageModel": [[{ "node": "AI Agent (Draft Reply)", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "AI Agent (Draft Reply)": {
+      "main": [[{ "node": "AI Agent (Tone Corrector)", "type": "main", "index": 0 }]]
+    },
+    "Ollama (Tone)": {
+      "ai_languageModel": [[{ "node": "AI Agent (Tone Corrector)", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "AI Agent (Tone Corrector)": {
+      "main": [[{ "node": "Send Reply", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
