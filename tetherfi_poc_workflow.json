@@ -1,0 +1,299 @@
+{
+  "name": "Tetherfi Email AI Agent (POC)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "filters": { "readStatus": "unread" }
+      },
+      "id": "node-gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const policyText = `\nTETHERFI CUSTOMER SUPPORT POLICY DOCUMENT\n\nSECTION 1: WIFI ISSUES\n\nIssue: Customer cannot connect to WiFi\nResolution Steps:\n1. Ask customer to restart their router by unplugging for 30 seconds and plugging back in.\n2. Check if the WiFi light on the router is stable green. If blinking red, there is a line issue.\n3. Ask customer to forget the network on their device and reconnect with the correct password.\n4. If issue persists after restart, escalate to technical team within 2 hours.\n5. Offer a callback within 4 hours if remote fix is not possible.\nResponse Time: Acknowledge within 1 hour. Resolve within 24 hours.\n\nIssue: WiFi speed is slow\nResolution Steps:\n1. Ask customer to run a speed test at www.speedtest.net and share results.\n2. If speed is below 50% of subscribed plan, escalate to network team immediately.\n3. Suggest customer place router in a central location away from walls.\n4. Offer a free technician visit if remote steps do not resolve the issue.\nResponse Time: Acknowledge within 1 hour. Resolve within 48 hours.\n\nIssue: WiFi keeps disconnecting\nResolution Steps:\n1. Ask customer to check if disconnection happens on all devices or just one.\n2. If all devices, check for network outage in the area.\n3. Reset router to factory settings if no outage is found.\n4. Schedule technician visit if problem continues after reset.\nResponse Time: Acknowledge within 1 hour. Resolve within 24 hours.\n\nSECTION 2: BROADBAND ISSUES\n\nIssue: No internet connection\nResolution Steps:\n1. Ask customer to check if all cable connections to the router are secure.\n2. Check the broadband light on the router. If red or off, there is a line fault.\n3. Run a remote line diagnostic from the support portal.\n4. If line fault is confirmed, raise a field engineer ticket immediately.\n5. Field engineer will visit within 24 hours on working days.\nResponse Time: Acknowledge within 30 minutes. Resolve within 24 hours.\n\nIssue: Broadband speed much lower than plan\nResolution Steps:\n1. Ask customer to connect device directly to router via ethernet cable and test speed.\n2. If wired speed is also low, the issue is with the line not the WiFi.\n3. Run a remote speed and line quality test from support portal.\n4. If line quality is degraded, escalate to network team for line investigation.\n5. Offer temporary data compensation if issue takes more than 48 hours to resolve.\nResponse Time: Acknowledge within 1 hour. Resolve within 48 hours.\n\nSECTION 3: BILLING AND PAYMENT ISSUES\n\nIssue: Customer charged incorrectly\nResolution Steps:\n1. Pull up the customer billing history from the CRM system.\n2. If overcharge is confirmed, raise a refund request immediately.\n3. Refund will be processed within 5 to 7 working days to the original payment method.\n4. Send a written confirmation of the refund to the customer registered email.\nResponse Time: Acknowledge within 2 hours. Resolve within 7 working days.\n\nIssue: Payment not reflecting in account\nResolution Steps:\n1. Ask customer for payment reference number or transaction ID.\n2. Check payment gateway records for the transaction.\n3. If payment is found but not updated, manually reconcile the account.\n4. Resolve within 24 hours. If delayed beyond 48 hours notify the customer proactively.\nResponse Time: Acknowledge within 1 hour. Resolve within 24 hours.\n\nSECTION 4: ROUTER AND EQUIPMENT ISSUES\n\nIssue: Router not powering on\nResolution Steps:\n1. Ask customer to check if the power adapter is properly connected.\n2. If router still does not power on, arrange a replacement router within 2 working days.\n3. Provide prepaid return label for the faulty router.\nResponse Time: Acknowledge within 1 hour. Resolve within 2 working days.\n\nSECTION 5: ESCALATION POLICY\n\n1. If any issue cannot be resolved within the first 2 email exchanges, escalate to senior support team immediately.\n2. For high priority customers or business accounts, response time is reduced to 30 minutes.\n3. Any legal complaints must be escalated to the legal team within 1 hour.\n4. If a customer mentions they will switch providers, flag as churn risk and escalate to retention team.\n\nSECTION 6: TONE AND COMMUNICATION GUIDELINES\n\n1. Always greet the customer by their first name.\n2. Use a professional, friendly, and empathetic tone in all communications.\n3. Always acknowledge the customer frustration before jumping to solutions.\n4. Always end every email with: Best regards, Tetherfi Support Team.\n5. Do not share internal system names, pricing structures, or employee details with customers.\n\nSECTION 7: REFUND POLICY\n\n1. Refunds are applicable within 30 days of the charge date.\n2. Customer must provide proof of payment such as transaction ID or screenshot.\n3. Refunds are processed within 5 to 7 working days.\n4. Refunds are credited back to the original payment method only.\n5. Service credits can be offered as an alternative to cash refunds.\n`;\n\nconst chunkSize = 400;\nconst overlap = 50;\nconst chunks = [];\n\nfor (let i = 0; i < policyText.length; i += chunkSize - overlap) {\n  const chunk = policyText.slice(i, i + chunkSize);\n  if (chunk.trim().length > 0) {\n    chunks.push({\n      json: {\n        pageContent: chunk,\n        metadata: { source: 'tetherfi_support_policy' }\n      }\n    });\n  }\n}\n\nreturn chunks;"
+      },
+      "id": "node-policy-loader",
+      "name": "Load Policy Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 600]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "memoryKey": "tetherfi_policies",
+        "clearStore": true
+      },
+      "id": "node-vector-store-insert",
+      "name": "Vector Store (Insert)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1,
+      "position": [500, 600]
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text",
+        "baseUrl": "http://localhost:11434"
+      },
+      "id": "node-embed-insert",
+      "name": "Ollama Embeddings (Insert)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [500, 780]
+    },
+    {
+      "parameters": {
+        "mode": "retrieve",
+        "memoryKey": "tetherfi_policies"
+      },
+      "id": "node-vector-store-retrieve",
+      "name": "Vector Store (Retrieve)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text",
+        "baseUrl": "http://localhost:11434"
+      },
+      "id": "node-embed-retrieve",
+      "name": "Ollama Embeddings (Retrieve)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [900, 780]
+    },
+    {
+      "parameters": {
+        "name": "policy_retriever",
+        "description": "Retrieves relevant Tetherfi customer support policies including WiFi issues, broadband issues, billing issues, router problems, escalation rules and tone guidelines. Always call this before drafting any reply.",
+        "topK": 3
+      },
+      "id": "node-rag-tool",
+      "name": "RAG Tool (Policy Retriever)",
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1,
+      "position": [1100, 600]
+    },
+    {
+      "parameters": {
+        "categories": {
+          "categories": [
+            { "category": "wifi_issue", "description": "Customer has WiFi connectivity problems, slow speed, or keeps disconnecting" },
+            { "category": "broadband_issue", "description": "Customer has no internet, broadband dropping, or slow broadband speed" },
+            { "category": "billing_issue", "description": "Customer has payment problems, wrong charges, refund requests, or bill disputes" },
+            { "category": "router_issue", "description": "Customer has router hardware problems, lights showing error, or router not working" },
+            { "category": "high_priority", "description": "Urgent issues, customer threatening to leave, legal complaints, or business account issues" }
+          ]
+        },
+        "inputText": "={{ $json.snippet }}",
+        "options": {}
+      },
+      "id": "node-classifier",
+      "name": "Text Classifier",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "model": "llama3.2",
+        "baseUrl": "http://localhost:11434",
+        "options": {}
+      },
+      "id": "node-ollama-classifier",
+      "name": "Ollama (Classifier)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [250, 480]
+    },
+    {
+      "parameters": {
+        "operation": "addLabel",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": ["Label_1"]
+      },
+      "id": "node-label-wifi",
+      "name": "Label: WiFi Issue",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [500, 100]
+    },
+    {
+      "parameters": {
+        "operation": "addLabel",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": ["Label_2"]
+      },
+      "id": "node-label-broadband",
+      "name": "Label: Broadband Issue",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [500, 220]
+    },
+    {
+      "parameters": {
+        "operation": "addLabel",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": ["Label_3"]
+      },
+      "id": "node-label-billing",
+      "name": "Label: Billing Issue",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [500, 340]
+    },
+    {
+      "parameters": {
+        "operation": "addLabel",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": ["Label_4"]
+      },
+      "id": "node-label-router",
+      "name": "Label: Router Issue",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [500, 460]
+    },
+    {
+      "parameters": {
+        "operation": "addLabel",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": ["Label_5"]
+      },
+      "id": "node-label-priority",
+      "name": "Label: High Priority",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [500, 580]
+    },
+    {
+      "parameters": {
+        "model": "llama3.2",
+        "baseUrl": "http://localhost:11434",
+        "options": { "temperature": 0.3 }
+      },
+      "id": "node-ollama-agent",
+      "name": "Ollama (Agent)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [1100, 480]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a professional customer support email assistant for Tetherfi — a telecom and internet service provider.\n\nYou have access to Tetherfi's customer support policies via the policy_retriever tool.\nALWAYS call policy_retriever FIRST before drafting any reply.\n\nEmail details:\nFrom: {{ $('Gmail Trigger').item.json.from }}\nSubject: {{ $('Gmail Trigger').item.json.subject }}\nMessage: {{ $('Gmail Trigger').item.json.snippet }}\nCategory: {{ $('Text Classifier').item.json.category }}\n\nInstructions:\n1. Call policy_retriever with the issue type to get relevant resolution steps\n2. Draft a professional reply based strictly on those policies\n3. Include the exact resolution steps from the policy\n4. Keep tone professional, friendly, and empathetic\n5. Acknowledge the customer's frustration first\n6. Address the customer by name if available in the email\n7. End with: Best regards, Tetherfi Support Team\n\nDraft the reply now.",
+        "options": {}
+      },
+      "id": "node-ai-agent",
+      "name": "AI Agent (Draft Reply)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "model": "llama3.2",
+        "baseUrl": "http://localhost:11434",
+        "options": { "temperature": 0.1 }
+      },
+      "id": "node-ollama-tone",
+      "name": "Ollama (Tone)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [1350, 480]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a tone correction expert for Tetherfi customer support emails.\n\nReview the draft email below and correct the tone if needed.\nRules:\n- Must be professional and friendly\n- Must NOT be casual or use slang\n- Must be empathetic to the customer\n- Must be clear and concise\n- Must include all resolution steps from the draft\n- Must end with: Best regards, Tetherfi Support Team\n- Do NOT change the actual information, policy content or resolution steps\n\nDraft to review:\n{{ $('AI Agent (Draft Reply)').item.json.output }}\n\nReturn ONLY the final corrected email. No explanations.",
+        "options": {}
+      },
+      "id": "node-tone-agent",
+      "name": "AI Agent (Tone Corrector)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "operation": "reply",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "message": "={{ $('AI Agent (Tone Corrector)').item.json.output }}",
+        "options": {}
+      },
+      "id": "node-send-reply",
+      "name": "Send Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1600, 300]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [[
+        { "node": "Load Policy Text", "type": "main", "index": 0 },
+        { "node": "Text Classifier", "type": "main", "index": 0 }
+      ]]
+    },
+    "Load Policy Text": {
+      "main": [[{ "node": "Vector Store (Insert)", "type": "main", "index": 0 }]]
+    },
+    "Ollama Embeddings (Insert)": {
+      "ai_embedding": [[{ "node": "Vector Store (Insert)", "type": "ai_embedding", "index": 0 }]]
+    },
+    "Ollama Embeddings (Retrieve)": {
+      "ai_embedding": [[{ "node": "Vector Store (Retrieve)", "type": "ai_embedding", "index": 0 }]]
+    },
+    "Vector Store (Retrieve)": {
+      "ai_vectorStore": [[{ "node": "RAG Tool (Policy Retriever)", "type": "ai_vectorStore", "index": 0 }]]
+    },
+    "RAG Tool (Policy Retriever)": {
+      "ai_tool": [[{ "node": "AI Agent (Draft Reply)", "type": "ai_tool", "index": 0 }]]
+    },
+    "Ollama (Classifier)": {
+      "ai_languageModel": [[{ "node": "Text Classifier", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Text Classifier": {
+      "main": [
+        [{ "node": "Label: WiFi Issue", "type": "main", "index": 0 }],
+        [{ "node": "Label: Broadband Issue", "type": "main", "index": 0 }],
+        [{ "node": "Label: Billing Issue", "type": "main", "index": 0 }],
+        [{ "node": "Label: Router Issue", "type": "main", "index": 0 }],
+        [{ "node": "Label: High Priority", "type": "main", "index": 0 }]
+      ]
+    },
+    "Label: WiFi Issue": {
+      "main": [[{ "node": "AI Agent (Draft Reply)", "type": "main", "index": 0 }]]
+    },
+    "Label: Broadband Issue": {
+      "main": [[{ "node": "AI Agent (Draft Reply)", "type": "main", "index": 0 }]]
+    },
+    "Label: Billing Issue": {
+      "main": [[{ "node": "AI Agent (Draft Reply)", "type": "main", "index": 0 }]]
+    },
+    "Label: Router Issue": {
+      "main": [[{ "node": "AI Agent (Draft Reply)", "type": "main", "index": 0 }]]
+    },
+    "Label: High Priority": {
+      "main": [[{ "node": "AI Agent (Draft Reply)", "type": "main", "index": 0 }]]
+    },
+    "Ollama (Agent)": {
+      "ai_languageModel": [[{ "node": "AI Agent (Draft Reply)", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "AI Agent (Draft Reply)": {
+      "main": [[{ "node": "AI Agent (Tone Corrector)", "type": "main", "index": 0 }]]
+    },
+    "Ollama (Tone)": {
+      "ai_languageModel": [[{ "node": "AI Agent (Tone Corrector)", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "AI Agent (Tone Corrector)": {
+      "main": [[{ "node": "Send Reply", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}
